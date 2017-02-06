@@ -1,0 +1,617 @@
+package com.xym;
+
+import java.awt.AWTException;
+import java.awt.Container;
+import java.awt.FlowLayout;
+import java.awt.Image;
+import java.awt.MenuItem;
+import java.awt.PopupMenu;
+import java.awt.SystemTray;
+import java.awt.Toolkit;
+import java.awt.TrayIcon;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+
+import javax.swing.BoxLayout;
+import javax.swing.DefaultComboBoxModel;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
+import javax.swing.JFileChooser;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.event.MenuEvent;
+import javax.swing.event.MenuListener;
+
+import com.xym.broadcast.JFrameBroadCast;
+
+public class Window extends JFrame implements MouseListener, ActionListener,
+		MenuListener {
+
+	TrayIcon trayIcon = null;
+	Container c = null;
+	Thread treadCaller = null;
+	JButton button_caller;
+	CallerService callerService = null;
+	JComboBox comboBox_port;
+	JTextArea textArea_status;
+	JFileChooser fileChooser = new JFileChooser();
+	JTextField textField_file;
+	JPanel panel;
+	JButton button_save;
+	JTextField textField_localNo;
+	JCheckBox checkbox_auto;
+	JButton button_checkPort;
+	JTextArea textArea_record;
+	Regedit reg = new Regedit();
+	Map<String, CallerBean> map_ports = new HashMap<String, CallerBean>();
+	JMenu menu_status;
+
+	public static void main(String[] args) {
+
+		Window win = new Window();
+
+		win.setTray();
+
+		win.setVisible(true);
+		win.setTitle("来电显示");
+
+		win.setLocationRelativeTo(null);
+		win.setDefaultCloseOperation(JFrame.HIDE_ON_CLOSE);
+
+		win.paint();
+
+		win.setSize(530, 500);
+
+		// start broadcast receive
+		new JFrameBroadCast().startReceiveBroadCast();
+	}
+
+	public void showWindow() {
+		this.setVisible(true);
+	}
+
+	public void paint() {
+
+		// menu bar
+		this.setJMenuBar(this.createJMenuBar());
+
+		Container container = getContentPane();
+
+		container.setLayout(new FlowLayout(0));
+
+		panel = new JPanel();
+		/*
+		 * panel.setLayout(new GridBagLayout()); GridBagConstraints c = new
+		 * GridBagConstraints();
+		 */
+
+		container.add(panel);
+
+		// ports list
+		JLabel label_port = new JLabel("COM:");
+		comboBox_port = new JComboBox();
+		comboBox_port.setModel(new DefaultComboBoxModel(new CallerService()
+				.getSerialPorts().toArray()));
+		comboBox_port.setActionCommand("selectPort");
+		comboBox_port.addActionListener(this);
+
+		button_checkPort = new JButton("检测");
+		button_checkPort.setActionCommand("checkPort");
+		button_checkPort.addActionListener(this);
+
+		panel.add(label_port);
+
+		panel.add(comboBox_port);
+		panel.add(button_checkPort);
+
+		// 本地号码
+		JLabel label_localNo = new JLabel("本地号码:");
+		textField_localNo = new JTextField(10);
+		button_save = new JButton("保存");
+		button_save.addActionListener(this);
+		button_save.setActionCommand("savePortAndLocalNo");
+
+		panel.add(label_localNo);
+		panel.add(textField_localNo);
+		panel.add(button_save);
+
+		// 启动 button
+		JPanel panel_start = new JPanel();
+		button_caller = new JButton("启动来电提醒");
+		button_caller.addActionListener(this);
+		button_caller.setActionCommand("activeCaller");
+		panel_start.add(button_caller);
+
+		checkbox_auto = new JCheckBox("启动程序后自动开始来电提醒");
+		checkbox_auto.addActionListener(this);
+		checkbox_auto.setActionCommand("autoStart");
+		panel_start.add(checkbox_auto);
+
+		container.add(panel_start);
+
+		// 来电记录
+		JPanel panel_record = new JPanel();
+		// JLabel label_file = new JLabel("来电保存路径:");
+		JButton button_save_path = new JButton("保存记录路径:");
+		button_save_path.setActionCommand("saveRecordPath");
+		button_save_path.addActionListener(this);
+		textField_file = new JTextField(20);
+		textField_file.setEditable(false);
+		JButton button_select = new JButton("选择");
+		button_select.addActionListener(this);
+		button_select.setActionCommand("chooseFile");
+		panel_record.add(button_save_path);
+		panel_record.add(textField_file);
+		panel_record.add(button_select);
+		container.add(panel_record);
+
+		JButton button_read_record = new JButton("读取记录");
+		button_read_record.addActionListener(this);
+		button_read_record.setActionCommand("readRecord");
+		panel_record.add(button_read_record);
+		/*
+		 * // right-corner show button JButton button = new
+		 * JButton("showTranslucentFrame"); button.addActionListener(this);
+		 * button.setActionCommand("showTranslucentFrame"); panel.add(button);
+		 */
+
+		JPanel panel_msg = new JPanel();
+		panel_msg.setLayout(new BoxLayout(panel_msg, BoxLayout.Y_AXIS));
+		// 来电记录显示
+		textArea_record = new JTextArea(15, 40);
+		textArea_record.setAutoscrolls(true);
+		textArea_record.setEditable(false);
+		textArea_record.setLineWrap(true);
+		textArea_record.setWrapStyleWord(true);
+		panel_msg.add(new JScrollPane(textArea_record));
+
+		// 状态区域
+		textArea_status = new JTextArea(4, 40);
+		textArea_status.setBackground(this.getBackground());
+		textArea_status.setAutoscrolls(true);
+		textArea_status.setEditable(false);
+		textArea_status.setLineWrap(true);
+		textArea_status.setWrapStyleWord(true);
+		panel_msg.add(new JScrollPane(textArea_status));
+
+		// reg path
+		JTextField textField_reg_path = new JTextField(
+				"HKEY_LOCAL_MACHINE\\SOFTWARE\\JavaSoft\\Prefs\\caller");
+		textField_reg_path.setEditable(false);
+		textField_reg_path.setEditable(false);
+		panel_msg.add(textField_reg_path);
+		container.add(panel_msg);
+
+		// 检测regedit，是否自动启动
+		if (reg.getRecordFilePath().isEmpty()) {
+			reg.setRecordFilePath("g:\\callerRecord.csv");
+		}
+
+		this.textField_file.setText(reg.getRecordFilePath());
+
+		if (reg.getAutoStartSerialPorts() != null) {
+			// set checkbox port by regedit
+			String[] item = new String[reg.getAutoStartSerialPorts().length];
+			item = reg.getAutoStartSerialPorts();
+
+			/*
+			 * comboBox_port.setModel(new DefaultComboBoxModel(item));
+			 * textField_localNo.setText(reg.getPhoneNoBySerialPort(reg
+			 * .getAutoStartSerialPort()));
+			 */
+
+			for (int i = 0; i < item.length; i++) {
+				String port = item[i];
+				String[] arr_str = new String[1];
+				arr_str[0] = port;
+
+				comboBox_port.setModel(new DefaultComboBoxModel(arr_str));
+				comboBox_port.setSelectedIndex(0);
+				if (this.activeCaller()) {
+					this.setPortStatus(comboBox_port.getSelectedItem()
+							.toString(), true);
+					this.setVisible(false);
+				}
+			}
+
+		}
+	}
+
+	public void setMessage(String msg) {
+		textArea_status.append(new SimpleDateFormat("yy-MM-dd hh:mm:ss  ")
+				.format(new Date()) + msg + "\n");
+		textArea_status.setCaretPosition(textArea_status.getText().length());
+	}
+
+	public void setTray() {
+		if (SystemTray.isSupported()) {
+			// get the SystemTray instance
+			SystemTray tray = SystemTray.getSystemTray();
+			// load an image
+			// "D:\\Program Files\\TC UP\\PLUGINS\\Media\\MirandaIM\\Smileys\\Animated-More\\01.gif"
+			// new URL(
+			// ClassLoader.getSystemResource(""),"/com/xym/resources/Animated-More/01.gif"
+			// )
+			Image image = null;
+
+			image = Toolkit.getDefaultToolkit().getImage(
+					"resources/Animated-More/01.gif");
+
+			// create a action listener to listen for default action executed on
+			// the tray icon
+			ActionListener listener = new ActionListener() {
+				public void actionPerformed(ActionEvent e) {
+					try {
+						if (e.getActionCommand() == "exit") {
+							// MainForm.this.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+							int option = JOptionPane.showConfirmDialog(
+									Window.this, "确定退出 来电提醒 系统? ", "提示 ",
+									JOptionPane.YES_NO_OPTION);
+							if (option == JOptionPane.YES_OPTION) {
+								System.exit(0);
+							} else {
+								return;
+							}
+						}
+						if (e.getActionCommand() == "open") {
+							showWindow();
+							return;
+						}
+					} catch (Exception ex) {
+						ex.printStackTrace();
+					}
+				}
+			};
+			// create a popup menu
+			PopupMenu popup = new PopupMenu();
+			// create menu item for the default action
+			MenuItem defaultItem = new MenuItem("退出");
+			defaultItem.addActionListener(listener);
+			defaultItem.setActionCommand("exit");
+
+			MenuItem menuItem_open = new MenuItem("打开");
+			menuItem_open.addActionListener(listener);
+			menuItem_open.setActionCommand("open");
+
+			popup.add(defaultItem);
+			popup.add(menuItem_open);
+			// / ... add other items
+			// construct a TrayIcon
+			trayIcon = new TrayIcon(image, "来电显示", popup);
+			// set the TrayIcon properties
+			trayIcon.addActionListener(listener);
+			trayIcon.addMouseListener(this);
+			// ...
+			// add the tray image
+			try {
+				tray.add(trayIcon);
+			} catch (AWTException e) {
+				System.err.println(e);
+			}
+			// ...
+			c = this.getContentPane();
+		} else {
+			// disable tray option in your application or
+			// perform other actions
+			// ...
+		}
+		// ...
+		// some time later
+		// the application state has changed - update the image
+		// if (trayIcon != null)
+		// {
+		// trayIcon.setImage(updatedImage);
+		// }
+
+	}
+
+	public void mouseClicked(MouseEvent e) {
+		// 点击系统托盘图标和鼠标左键
+		if (e.getSource() == this.trayIcon && e.getButton() == e.BUTTON1) {
+			if (e.getClickCount() == 1)// 单击
+			{
+				this.setVisible(true);
+				// System.out.println("implemented1");
+			} else if (e.getClickCount() == 2)// 双击
+			{
+				System.out.println("implemented2");
+			}
+		}
+
+	}
+
+	@Override
+	public void actionPerformed(ActionEvent e) {
+		String port="COM100";
+		if (comboBox_port.getSelectedItem()!=null) {
+			 port = comboBox_port.getSelectedItem().toString();
+		}
+		
+		String cmd = e.getActionCommand();
+		switch (cmd) {
+		case "showTranslucentFrame":
+			new TranslucentFrame().showMsgOnRightCorner("来电提醒",
+					"13578899365 <br> <h1>夏悦铭</h1>");
+			break;
+		case "activeCaller":
+			// SimpleRead.main(null);
+			if (activeCaller()) {
+				this.setPortStatus(comboBox_port.getSelectedItem().toString(),
+						true);
+			}
+			break;
+		case "closeCaller":
+			if (treadCaller != null) {
+				this.treadCaller.interrupt();
+			}
+			this.setMessage("关闭来电显示:" + port);
+			this.setPortStatus(port, false);
+			/*
+			 * button_caller.setText("启动来电提醒");
+			 * button_caller.setActionCommand("activeCaller");
+			 * 
+			 * comboBox_port.setEnabled(true);
+			 * textField_localNo.setEditable(true);
+			 * button_save.setEnabled(true);
+			 * this.button_checkPort.setEnabled(true);
+			 */
+
+			break;
+		case "chooseFile":
+			/*
+			 * 这是尤为重要的。因为JFileChooser默认的是选择文件，而需要选目录。 故要将DIRECTORIES_ONLY装入模型
+			 * 另外，若选择文件，则无需此句
+			 */
+			fileChooser
+					.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+			int intRetVal = fileChooser.showOpenDialog(this);
+			if (intRetVal == JFileChooser.APPROVE_OPTION) {
+				textField_file.setText(fileChooser.getSelectedFile().getPath());
+			}
+			break;
+		case "readRecord":
+			if (!FileUtil.existFile(this.textField_file.getText())) {
+				JOptionPane.showMessageDialog(this, "文件不存在");
+				return;
+			}
+
+			this.textArea_record.setText(FileUtil
+					.readFileByLines(this.textField_file.getText()));
+			break;
+		case "autoStart":
+			if (this.checkbox_auto.isSelected()) {
+				reg.setAutoStartSerialPort(port);
+			} else {
+				reg.removeAutoStartSerialPort(port);
+			}
+			break;
+		case "checkPort":
+			comboBox_port.setModel(new DefaultComboBoxModel(new CallerService()
+					.getSerialPorts().toArray()));
+			break;
+		case "savePortAndLocalNo":
+			reg.setPhoneNoAndSerialPort(comboBox_port.getSelectedItem()
+					.toString(), textField_localNo.getText());
+			JOptionPane.showMessageDialog(this, "save ok");
+			break;
+		case "selectPort":
+			rePaintByPortName(port);
+			this.textField_localNo.setText(reg.getPhoneNoBySerialPort(port));
+			break;
+		case "saveRecordPath":
+			String str = this.textField_file.getText();
+			// new File(str);
+			reg.setRecordFilePath(str);
+			JOptionPane.showMessageDialog(this, "保存来电记录路径成功");
+			break;
+		case "help_about":
+			String msg = "1.配置信息保存在HKEY_LOCAL_MACHINE\\SOFTWARE\\JavaSoft\\Prefs\\caller下。\n";
+			JOptionPane.showMessageDialog(this, msg);
+			break;
+		case "broadcast":
+			new JFrameBroadCast().paint();
+			break;
+		}
+	}
+
+	public boolean activeCaller() {
+		// String port = "COM1";
+		String port = comboBox_port.getSelectedItem().toString();
+		String localNo = reg.getPhoneNoBySerialPort(port);
+		String recordPath = this.textField_file.getText();
+
+		// this.setMessage("启动来电显示:" + port);
+
+		// check before run;
+		String checkResult = new CallerService().checkSerialPortAvaliable(port);
+
+		// this.setMessage(checkResult);
+
+		if (!checkResult.equals("ok")) {
+			JOptionPane.showMessageDialog(this, checkResult);
+			return false;
+		}
+
+		// 开启来电后，界面
+		/*
+		 * button_caller.setText("关闭来电提醒");
+		 * button_caller.setActionCommand("closeCaller");
+		 * 
+		 * comboBox_port.setEnabled(false);
+		 * textField_localNo.setEditable(false); button_save.setEnabled(false);
+		 * this.button_checkPort.setEnabled(false);
+		 */
+		callerService = new CallerService(port, localNo, recordPath);
+		treadCaller = new Thread(callerService, localNo);
+		treadCaller.start();
+		this.setMessage("启动来电显示:" + port + " 成功");
+		return true;
+	}
+
+	// 如果启动来电提醒成功，则设置为active,关闭来电提醒后则设置为
+	public void setPortStatus(String port, boolean active) {
+		CallerBean cb = new CallerBean();
+		cb.setComPort(port);
+		cb.setActive(active);
+		if (active) {
+			cb.setStatus("open");
+		} else {
+			cb.setStatus("close");
+		}
+
+		this.rePaintByPortStatus(active);
+
+		map_ports.put(port, cb);
+	}
+
+	public String getAllPortStatus() {
+		StringBuffer sb = new StringBuffer();
+		if (!map_ports.isEmpty()) {
+			Set<String> set_key = map_ports.keySet();
+			Iterator<String> it = set_key.iterator();
+
+			while (it.hasNext()) {
+				String key = it.next();
+				CallerBean cb = map_ports.get(key);
+				String status = cb.getStatus();
+				sb.append(key).append(":").append(status).append("\n");
+			}
+		} else {
+			sb.append("No Ports Active。").append("\n");
+		}
+		// broadcast status
+		sb.append("发送来电显示广播:")
+				.append(new Regedit().isSendBroadCast() ? "是" : "否")
+				.append("\n");
+		sb.append("接收来电显示广播:").append(
+				new Regedit().isReceiveBroadCast() ? "是" : "否");
+		return sb.toString();
+	}
+
+	public void rePaintByPortName(String port) {
+		boolean active = this.isActivePort(port);
+		this.checkbox_auto.setSelected(reg.isAutoStartPort(port));
+		this.rePaintByPortStatus(active);
+	}
+
+	public void rePaintByPortStatus(boolean active) {
+		if (active) {
+			button_caller.setText("关闭来电提醒");
+			button_caller.setActionCommand("closeCaller");
+			textField_localNo.setEditable(false);
+			button_save.setEnabled(false);
+
+		} else {
+			button_caller.setText("开启来电提醒");
+			button_caller.setActionCommand("activeCaller");
+			textField_localNo.setEditable(true);
+			button_save.setEnabled(true);
+		}
+
+	}
+
+	public boolean isActivePort(String port) {
+		if (map_ports.get(port) == null) {
+			return false;
+		}
+		CallerBean cb = map_ports.get(port);
+		return cb.isActive();
+	}
+
+	private JMenuBar createJMenuBar() {
+		JMenuBar menuBar = new JMenuBar();
+		menuBar.setVisible(true);
+
+		JMenu menu_help = new JMenu("帮助");
+		JMenuItem item_about = new JMenuItem("关于本软件");
+		item_about.addActionListener(this);
+		item_about.setActionCommand("help_about");
+		menu_help.add(item_about);
+
+		menu_status = new JMenu("状态");
+		menu_status.addMenuListener(this);
+		// menu_status.addActionListener(this);
+		// menu_status.setActionCommand("status");
+
+		JMenu menu_config = new JMenu("设置");
+		JMenuItem item_broadcast = new JMenuItem("广播");
+		item_broadcast.addActionListener(this);
+		item_broadcast.setActionCommand("broadcast");
+		menu_config.add(item_broadcast);
+
+		/**
+		 * dail button
+		 */
+		JMenu menu_dail=new JMenu("拨号");
+		menu_dail.addMenuListener(this);
+		
+		menuBar.add(menu_status);
+		menuBar.add(menu_config);
+		menuBar.add(menu_help);
+		menuBar.add(menu_dail);
+
+		return menuBar;
+	}
+
+	@Override
+	public void mousePressed(MouseEvent e) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void mouseReleased(MouseEvent e) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void mouseEntered(MouseEvent e) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void mouseExited(MouseEvent e) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void menuSelected(MenuEvent e) {
+		if (e.getSource().equals(this.menu_status)) {
+			this.textArea_record.setText(this.getAllPortStatus());
+			this.menu_status.setSelected(false);
+			return;
+		}
+	}
+
+	@Override
+	public void menuDeselected(MenuEvent e) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void menuCanceled(MenuEvent e) {
+		// TODO Auto-generated method stub
+
+	}
+}

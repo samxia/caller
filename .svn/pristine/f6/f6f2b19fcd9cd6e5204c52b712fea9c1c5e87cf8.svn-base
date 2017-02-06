@@ -1,0 +1,440 @@
+package com.xym;
+
+import java.awt.AWTException;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Container;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.GridLayout;
+import java.awt.Image;
+import java.awt.LayoutManager;
+import java.awt.MenuItem;
+import java.awt.PopupMenu;
+import java.awt.SystemTray;
+import java.awt.Toolkit;
+import java.awt.TrayIcon;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+
+import javax.swing.BoxLayout;
+import javax.swing.DefaultComboBoxModel;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
+import javax.swing.JFileChooser;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+
+public class Window extends JFrame implements MouseListener, ActionListener {
+
+	TrayIcon trayIcon = null;
+	Container c = null;
+	Thread treadCaller = null;
+	JButton button_caller;
+	CallerService callerService = null;
+	JComboBox comboBox_port;
+	JTextArea textArea_status;
+	JFileChooser fileChooser = new JFileChooser();
+	JTextField textField_file;
+	JPanel panel;
+	JButton button_save;
+	JTextField textField_localNo;
+	JCheckBox checkbox_auto;
+	JButton button_checkPort;
+	JTextArea textArea_record;
+	Regedit reg = new Regedit();
+
+	public static void main(String[] args) {
+
+		Window win = new Window();
+
+		win.setTray();
+
+		win.setVisible(true);
+		win.setTitle("来电显示HKEY_LOCAL_MACHINE\\SOFTWARE\\JavaSoft\\Prefs\\caller");
+
+		win.setLocationRelativeTo(null);
+		win.setDefaultCloseOperation(JFrame.HIDE_ON_CLOSE);
+
+		win.paint();
+
+		win.setSize(530, 500);
+	}
+
+	public void showWindow() {
+		this.setVisible(true);
+	}
+
+	public void paint() {
+
+		Container container = getContentPane();
+
+		container.setLayout(new FlowLayout(0));
+
+		panel = new JPanel();
+		/*
+		 * panel.setLayout(new GridBagLayout()); GridBagConstraints c = new
+		 * GridBagConstraints();
+		 */
+
+		container.add(panel);
+		// ports list
+		JLabel label_port = new JLabel("COM:");
+		comboBox_port = new JComboBox();
+		comboBox_port.setModel(new DefaultComboBoxModel(new CallerService()
+				.getSerialPorts().toArray()));
+		comboBox_port.setActionCommand("selectPort");
+		comboBox_port.addActionListener(this);
+
+		button_checkPort = new JButton("检测");
+		button_checkPort.setActionCommand("checkPort");
+		button_checkPort.addActionListener(this);
+
+		panel.add(label_port);
+
+		panel.add(comboBox_port);
+		panel.add(button_checkPort);
+
+		// 本地号码
+		JLabel label_localNo = new JLabel("本地号码:");
+		textField_localNo = new JTextField(10);
+		button_save = new JButton("保存");
+		button_save.addActionListener(this);
+		button_save.setActionCommand("savePortAndLocalNo");
+
+		panel.add(label_localNo);
+		panel.add(textField_localNo);
+		panel.add(button_save);
+
+		// 启动 button
+		JPanel panel_start = new JPanel();
+		button_caller = new JButton("启动来电提醒");
+		button_caller.addActionListener(this);
+		button_caller.setActionCommand("activeCaller");
+		panel_start.add(button_caller);
+
+		checkbox_auto = new JCheckBox("启动程序后自动开始来电提醒");
+		checkbox_auto.addActionListener(this);
+		checkbox_auto.setActionCommand("autoStart");
+		panel_start.add(checkbox_auto);
+
+		container.add(panel_start);
+
+		// 来电记录
+		JPanel panel_record = new JPanel();
+		// JLabel label_file = new JLabel("来电保存路径:");
+		JButton button_save_path = new JButton("保存记录路径:");
+		button_save_path.setActionCommand("saveRecordPath");
+		button_save_path.addActionListener(this);
+		textField_file = new JTextField(20);
+		textField_file.setEditable(false);
+		JButton button_select = new JButton("选择");
+		button_select.addActionListener(this);
+		button_select.setActionCommand("chooseFile");
+		panel_record.add(button_save_path);
+		panel_record.add(textField_file);
+		panel_record.add(button_select);
+		container.add(panel_record);
+
+		JButton button_read_record = new JButton("读取记录");
+		button_read_record.addActionListener(this);
+		button_read_record.setActionCommand("readRecord");
+		panel_record.add(button_read_record);
+		/*
+		 * // right-corner show button JButton button = new
+		 * JButton("showTranslucentFrame"); button.addActionListener(this);
+		 * button.setActionCommand("showTranslucentFrame"); panel.add(button);
+		 */
+
+		JPanel panel_msg = new JPanel();
+		panel_msg.setLayout(new BoxLayout(panel_msg,BoxLayout.Y_AXIS));
+		// 来电记录显示
+		textArea_record = new JTextArea(15, 40);
+		textArea_record.setAutoscrolls(true);
+		textArea_record.setEditable(false);
+		textArea_record.setLineWrap(true);
+		textArea_record.setWrapStyleWord(true);
+		panel_msg.add(new JScrollPane(textArea_record));
+
+		// 状态区域
+		textArea_status = new JTextArea(4, 40);
+		textArea_status.setBackground(this.getBackground());
+		textArea_status.setAutoscrolls(true);
+		textArea_status.setEditable(false);
+		textArea_status.setLineWrap(true);
+		textArea_status.setWrapStyleWord(true);
+		panel_msg.add(new JScrollPane(textArea_status));
+		container.add(panel_msg);
+
+		// 检测regedit，是否自动启动
+		checkbox_auto.setSelected(reg.isAutoStart());
+		if (reg.getAutoStartSerialPort().isEmpty()) {
+			reg.setAutoStartSerialPort("com1");
+		}
+		if (reg.getRecordFilePath().isEmpty()) {
+			reg.setRecordFilePath("g:\\callerRecord.csv");
+		}
+		this.textField_file.setText(reg.getRecordFilePath());
+		if (reg.isAutoStart()) {
+			// set checkbox port by regedit
+			String[] item = new String[1];
+			item[0] = reg.getAutoStartSerialPort();
+			comboBox_port.setModel(new DefaultComboBoxModel(item));
+			textField_localNo.setText(reg.getPhoneNoBySerialPort(reg
+					.getAutoStartSerialPort()));
+			if (this.activeCaller()) {
+				this.setVisible(false);
+				// System.out.println("should min");
+			}
+
+		}
+	}
+
+	public void setMessage(String msg) {
+		textArea_status.append(new SimpleDateFormat("yy-MM-dd hh:mm:ss  ")
+				.format(new Date()) + msg + "\n");
+		textArea_status.setCaretPosition(textArea_status.getText().length());
+	}
+
+	public void setTray() {
+		if (SystemTray.isSupported()) {
+			// get the SystemTray instance
+			SystemTray tray = SystemTray.getSystemTray();
+			// load an image
+			Image image = Toolkit
+					.getDefaultToolkit()
+					.getImage(
+							"D:\\Program Files\\TC UP\\PLUGINS\\Media\\MirandaIM\\Smileys\\Animated-More\\01.gif");
+			// create a action listener to listen for default action executed on
+			// the tray icon
+			ActionListener listener = new ActionListener() {
+				public void actionPerformed(ActionEvent e) {
+					try {
+						if (e.getActionCommand() == "exit") {
+							// MainForm.this.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+							int option = JOptionPane.showConfirmDialog(
+									Window.this, "确定退出 来电提醒 系统? ", "提示 ",
+									JOptionPane.YES_NO_OPTION);
+							if (option == JOptionPane.YES_OPTION) {
+								System.exit(0);
+							} else {
+								return;
+							}
+						}
+						if (e.getActionCommand() == "open") {
+							showWindow();
+							return;
+						}
+					} catch (Exception ex) {
+						ex.printStackTrace();
+					}
+				}
+			};
+			// create a popup menu
+			PopupMenu popup = new PopupMenu();
+			// create menu item for the default action
+			MenuItem defaultItem = new MenuItem("退出");
+			defaultItem.addActionListener(listener);
+			defaultItem.setActionCommand("exit");
+
+			MenuItem menuItem_open = new MenuItem("打开");
+			menuItem_open.addActionListener(listener);
+			menuItem_open.setActionCommand("open");
+
+			popup.add(defaultItem);
+			popup.add(menuItem_open);
+			// / ... add other items
+			// construct a TrayIcon
+			trayIcon = new TrayIcon(image, "来电显示", popup);
+			// set the TrayIcon properties
+			trayIcon.addActionListener(listener);
+			trayIcon.addMouseListener(this);
+			// ...
+			// add the tray image
+			try {
+				tray.add(trayIcon);
+			} catch (AWTException e) {
+				System.err.println(e);
+			}
+			// ...
+			c = this.getContentPane();
+		} else {
+			// disable tray option in your application or
+			// perform other actions
+			// ...
+		}
+		// ...
+		// some time later
+		// the application state has changed - update the image
+		// if (trayIcon != null)
+		// {
+		// trayIcon.setImage(updatedImage);
+		// }
+
+	}
+
+	public void mouseClicked(MouseEvent e) {
+		// 点击系统托盘图标和鼠标左键
+		if (e.getSource() == this.trayIcon && e.getButton() == e.BUTTON1) {
+			if (e.getClickCount() == 1)// 单击
+			{
+				this.setVisible(true);
+				// System.out.println("implemented1");
+			} else if (e.getClickCount() == 2)// 双击
+			{
+				System.out.println("implemented2");
+			}
+		}
+
+	}
+
+	@Override
+	public void actionPerformed(ActionEvent e) {
+		String cmd = e.getActionCommand();
+		switch (cmd) {
+		case "showTranslucentFrame":
+			new TranslucentFrame().showMsgOnRightCorner("来电提醒",
+					"13578899365 <br> <h1>夏悦铭</h1>");
+			break;
+		case "activeCaller":
+			// SimpleRead.main(null);
+			if (activeCaller()) {
+
+			}
+			break;
+		case "closeCaller":
+			if (treadCaller != null) {
+				this.treadCaller.interrupt();
+			}
+
+			this.setMessage("关闭来电显示");
+
+			button_caller.setText("启动来电提醒");
+			button_caller.setActionCommand("activeCaller");
+
+			comboBox_port.setEnabled(true);
+			textField_localNo.setEditable(true);
+			button_save.setEnabled(true);
+			this.button_checkPort.setEnabled(true);
+
+			break;
+		case "chooseFile":
+			/*
+			 * 这是尤为重要的。因为JFileChooser默认的是选择文件，而需要选目录。 故要将DIRECTORIES_ONLY装入模型
+			 * 另外，若选择文件，则无需此句
+			 */
+			fileChooser
+					.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+			int intRetVal = fileChooser.showOpenDialog(this);
+			if (intRetVal == JFileChooser.APPROVE_OPTION) {
+				textField_file.setText(fileChooser.getSelectedFile().getPath());
+			}
+			break;
+		case "readRecord":
+			if (!FileUtil.existFile(this.textField_file.getText())) {
+				JOptionPane.showMessageDialog(this, "文件不存在");
+				return;
+			}
+
+			this.textArea_record.setText(FileUtil
+					.readFileByLines(this.textField_file.getText()));
+			break;
+		case "autoStart":
+			reg.setAutoStart(checkbox_auto.isSelected());
+			reg.setAutoStartSerialPort(comboBox_port.getSelectedItem()
+					.toString());
+			break;
+		case "checkPort":
+			comboBox_port.setModel(new DefaultComboBoxModel(new CallerService()
+					.getSerialPorts().toArray()));
+			break;
+		case "savePortAndLocalNo":
+			reg.setPhoneNoAndSerialPort(comboBox_port.getSelectedItem()
+					.toString(), textField_localNo.getText());
+			JOptionPane.showMessageDialog(this, "save ok");
+			break;
+		case "selectPort":
+			this.textField_localNo.setText(reg
+					.getPhoneNoBySerialPort(comboBox_port.getSelectedItem()
+							.toString()));
+			break;
+		case "saveRecordPath":
+			String str = this.textField_file.getText();
+			// new File(str);
+			reg.setRecordFilePath(str);
+			JOptionPane.showMessageDialog(this, "保存来电记录路径成功");
+			break;
+		}
+	}
+
+	public boolean activeCaller() {
+		// String port = "COM1";
+		String port = comboBox_port.getSelectedItem().toString();
+		String localNo = this.textField_localNo.getText();
+
+		this.setMessage("启动来电显示:" + port);
+
+		// check before run;
+		String checkResult = new CallerService().checkSerialPortAvaliable(port);
+
+		this.setMessage(checkResult);
+
+		if (!checkResult.equals("ok")) {
+			JOptionPane.showMessageDialog(this, checkResult);
+			return false;
+		}
+
+		// 开启来电后，界面
+		button_caller.setText("关闭来电提醒");
+		button_caller.setActionCommand("closeCaller");
+
+		comboBox_port.setEnabled(false);
+		textField_localNo.setEditable(false);
+		button_save.setEnabled(false);
+		this.button_checkPort.setEnabled(false);
+
+		callerService = new CallerService(port,localNo);
+		treadCaller = new Thread(callerService, localNo);
+		treadCaller.start();
+
+		return true;
+	}
+
+	@Override
+	public void mousePressed(MouseEvent e) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void mouseReleased(MouseEvent e) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void mouseEntered(MouseEvent e) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void mouseExited(MouseEvent e) {
+		// TODO Auto-generated method stub
+
+	}
+}

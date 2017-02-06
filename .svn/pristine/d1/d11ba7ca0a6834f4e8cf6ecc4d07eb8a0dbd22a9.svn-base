@@ -1,0 +1,28 @@
+package com.xym.bossed.ws.client;
+
+import javax.jws.WebMethod;
+import javax.jws.WebParam;
+import javax.jws.WebResult;
+import javax.xml.ws.RequestWrapper;
+import javax.xml.ws.ResponseWrapper;
+
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
+
+import com.xym.bossed.ws.interfaces.IKehuWebService;
+
+public class KehuWebServiceClient {
+	public static ApplicationContext context = new ClassPathXmlApplicationContext(
+			"spring_cxf_client.xml");
+
+	public static void main(String[] args) {
+		System.out.println(new KehuWebServiceClient()
+				.getKehuNameByKehuTelNo("86109023"));
+	}
+
+	public String getKehuNameByKehuTelNo(String telNo) {
+		IKehuWebService kehuws = (IKehuWebService) context
+				.getBean("kehuWSClient");
+		return kehuws.getKehuNameByKehuTelNo(telNo);
+	}
+}

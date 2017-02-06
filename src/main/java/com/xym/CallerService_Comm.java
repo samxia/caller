@@ -1,0 +1,234 @@
+package com.xym;
+
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.TooManyListenersException;
+
+import javax.comm.CommPortIdentifier;
+import javax.comm.NoSuchPortException;
+import javax.comm.PortInUseException;
+import javax.comm.SerialPortEvent;
+import javax.comm.SerialPortEventListener;
+import javax.comm.SerialPort;
+import javax.comm.UnsupportedCommOperationException;
+import org.apache.log4j.Logger;
+
+import com.xym.bossed.ws.client.KehuWebServiceClient;
+import com.xym.broadcast.BroadCastSend;
+
+public class CallerService_Comm implements SerialPortEventListener, Runnable, CallerServiceInterface {
+	static Logger log = Logger.getLogger(CallerService_Comm.class);
+
+	InputStream inputStream;
+	SerialPort serialPort = null;
+	String localNo;
+	String recordPath = null;
+	String lastRecord;
+
+	/**
+	 * @param args
+	 * @throws IOException
+	 * @throws NoSuchPortException
+	 */
+	public static void main(String[] args) throws IOException {
+		CallerServiceInterface cs = new CallerService_Comm();
+		String msg = "86109613 来电:<h1>" + "898989899" + "</h1>" + "林业局";
+		//cs.sendBroadCast(msg);
+
+	}
+
+	public CallerService_Comm() {
+	}
+
+	public CallerService_Comm(String port, String localNo, String recordPath) {
+
+		this.localNo = localNo;
+		this.recordPath = recordPath;
+
+		CommPortIdentifier portId = null;
+
+		try {
+			portId = CommPortIdentifier.getPortIdentifier(port);
+			serialPort = (SerialPort) portId.open("SimpleReadApp", 2000);
+
+			inputStream = serialPort.getInputStream();
+
+			serialPort.addEventListener(this);
+
+			serialPort.notifyOnDataAvailable(true);
+
+			serialPort.setSerialPortParams(9600, SerialPort.DATABITS_8,
+					SerialPort.STOPBITS_1, SerialPort.PARITY_NONE);
+
+			// 打开来电显示功能
+			serialPort.getOutputStream().write("AT+VCID=1".getBytes());
+			serialPort.getOutputStream().write(13);// 回车
+			// System.out.println("Write:AT+VCID=1");
+			log.debug("Write:AT+VCID=1");
+		} catch (NoSuchPortException | PortInUseException | IOException
+				| TooManyListenersException | UnsupportedCommOperationException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public String getLastRecord() {
+		return this.lastRecord;
+	}
+
+	public String checkSerialPortAvaliable(String comPort) {
+		CommPortIdentifier port = null;
+		try {
+			port = CommPortIdentifier.getPortIdentifier(comPort);
+		} catch (NoSuchPortException e) {
+			return "找不到SerailPort:" + comPort;
+		}
+		if (port.isCurrentlyOwned()) {
+			return "当前端口:" + comPort + "已被某程序占用";
+		}
+		// check whether is been used
+		SerialPort sp = null;
+		try {
+			sp = (SerialPort) port.open("JustCheck", 2000);
+		} catch (PortInUseException e) {
+			return "当前端口:" + comPort + "已被使用";
+		} finally {
+			if (sp != null)
+				sp.close();
+		}
+		// serailPort=(SerialPort)port;
+		return "ok";
+	}
+
+	public List<String> getSerialPorts() {
+		Enumeration portList = CommPortIdentifier.getPortIdentifiers();
+		CommPortIdentifier portId;
+		List<String> list = new ArrayList<String>();
+		while (portList.hasMoreElements()) {
+			portId = (CommPortIdentifier) portList.nextElement();
+			// System.out.println(portId.getName()+"-"+portId.getPortType());
+			if (portId.getPortType() == CommPortIdentifier.PORT_SERIAL) {
+				list.add(portId.getName());
+				/*
+				 * if (portId.getName().equals("COM1")) { // if
+				 * (portId.getName().equals("/dev/term/a")) { }
+				 */
+
+			}
+		}
+		return list;
+
+	}
+
+	@Override
+	public void serialEvent(SerialPortEvent event) {
+		switch (event.getEventType()) {
+		case SerialPortEvent.BI:
+		case SerialPortEvent.OE:
+		case SerialPortEvent.FE:
+		case SerialPortEvent.PE:
+		case SerialPortEvent.CD:
+		case SerialPortEvent.CTS:
+		case SerialPortEvent.DSR:
+		case SerialPortEvent.RI:
+		case SerialPortEvent.OUTPUT_BUFFER_EMPTY:
+			break;
+		case SerialPortEvent.DATA_AVAILABLE:
+			byte[] readBuffer = new byte[50];
+
+			try {
+				while (inputStream.available() > 0) {
+					int numBytes = inputStream.read(readBuffer);
+				}
+				// System.out.print(new String(readBuffer));
+				this.lastRecord = handleCallerNo(new String(readBuffer),
+						recordPath);
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+			break;
+		}
+
+	}
+
+	public String handleCallerNo(String str, String recordPath)
+			throws IOException {
+		String date, time, no = null;
+		String str_caller_record = null;
+		String str_kehu_name = "";
+		this.recordPath = recordPath;
+
+		if (str == null || str.trim().isEmpty())
+			return null;
+		/*
+		 * DATE = 0727 TIME = 1744 NMBR = 13578899365
+		 */
+		if (str.contains("NMBR")) {
+			date = str.subSequence(str.indexOf("DATE") + 7,
+					str.indexOf("DATE") + 11).toString();
+			time = str.subSequence(str.indexOf("TIME") + 7,
+					str.indexOf("TIME") + 11).toString();
+			no = str.subSequence(str.indexOf("NMBR") + 7, str.length())
+					.toString().trim();
+			try {
+				str_kehu_name = new KehuWebServiceClient()
+						.getKehuNameByKehuTelNo(no);
+			} catch (Exception e) {
+				str_kehu_name = "WebService未链接";
+			}
+
+			str_caller_record = localNo + "," + date + "," + time + "," + no
+					+ "," + str_kehu_name;
+			System.out.println(str_caller_record);
+			recordLog(str_caller_record);
+			/*
+			 * BufferedWriter bufferedWriter = new BufferedWriter(new
+			 * FileWriter( "g:\\callerLog.csv", true));
+			 */
+
+			new TranslucentFrame().showMsgOnRightCorner(localNo + "来电", "<h1>"
+					+ no + "</h1>" + str_kehu_name);
+
+			// broadcast
+
+			this.sendBroadCast(localNo + "来电:<h1>" + no + "</h1>"
+					+ str_kehu_name);
+		}
+
+		return str_caller_record;
+	}
+
+	public void sendBroadCast(String msg) {
+		if (new Regedit().isSendBroadCast()) {
+			BroadCastSend bs = new BroadCastSend(msg);
+			Thread thread_send = new Thread(bs);
+			thread_send.start();
+		}
+	}
+
+	public void recordLog(String str) throws IOException {
+		BufferedWriter bufferedWriter;
+		if (this.recordPath == null)
+			recordPath = new Regedit().getRecordFilePath();
+		bufferedWriter = new BufferedWriter(new FileWriter(recordPath, true));
+		bufferedWriter.write(str);
+		bufferedWriter.newLine();
+		bufferedWriter.close();
+	}
+
+	@Override
+	public void run() {
+		try {
+
+			Thread.sleep(20000);
+		} catch (InterruptedException e) {
+			// System.out.println(e.getMessage());
+			log.debug(e.getMessage());
+			serialPort.close();
+		}
+	}
+}

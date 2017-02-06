@@ -1,0 +1,59 @@
+package com.xym;
+
+import java.util.prefs.Preferences;
+
+public class Regedit {
+	Preferences pre = Preferences.systemRoot().node("/caller");
+
+	/**
+	 * @param args
+	 */
+	public static void main(String[] args) {
+		Regedit r = new Regedit();
+		// r.write("com1", "86109618");
+		System.out.println("r:" + r.read("com3"));
+	}
+
+	public String getRecordFilePath() {
+		return this.read("recordPath");
+	}
+
+	public void setRecordFilePath(String path) {
+		this.write("recordPath", path);
+	}
+
+	public String getPhoneNoBySerialPort(String port) {
+		return this.read(port);
+	}
+
+	public void setPhoneNoAndSerialPort(String port, String no) {
+		this.write(port, no);
+	}
+
+	public boolean isAutoStart() {
+		String r=this.read("autoStart");
+		if(r.isEmpty()) return false;
+		return  Integer.valueOf(r)== 1 ? true : false;
+	}
+
+	public void setAutoStart(boolean auto) {
+		this.write("autoStart", auto ? "1" : "0");
+	}
+
+	public String getAutoStartSerialPort() {
+		return this.read("autoStartSerialPort");
+	}
+
+	public void setAutoStartSerialPort(String port) {
+		this.write("autoStartSerialPort", port);
+	}
+
+	public void write(String key, String value) {
+
+		pre.put(key.toLowerCase(), value);
+	}
+
+	public String read(String key) {
+		return pre.get(key.toLowerCase(), "");
+	}
+}
